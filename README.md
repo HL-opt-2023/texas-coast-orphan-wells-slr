@@ -201,14 +201,24 @@ were made. See [LICENSE](LICENSE) for the full text.
 GLO and NOAA source data are public-domain US-government / Texas-government
 datasets and remain so.
 
+## Author / contact
+
+**Hongcheng Liu** — University of Florida
+📧 [liu.h@ufl.edu](mailto:liu.h@ufl.edu)
+
+Questions, bug reports, or collaboration ideas: please open an
+[issue](https://github.com/HL-opt-2023/texas-coast-orphan-wells-slr/issues)
+or email directly.
+
 ## How to cite
 
 If this map informs research or policy work, please cite:
 
 ```
-Texas Coast Orphan-Well Inspection Priority with Sea-Level-Rise Risk.
-Open-source interactive map combining Texas GLO and NOAA OCM datasets.
-https://github.com/HL-opt-2023/texas-coast-orphan-wells-slr  (2026).
+Liu, H. (2026). Texas Coast Orphan-Well Inspection Priority with
+Sea-Level-Rise Risk. Open-source interactive map combining Texas GLO
+and NOAA OCM datasets.
+https://github.com/HL-opt-2023/texas-coast-orphan-wells-slr
 ```
 
 Underlying data: cite the original publishers — **Texas General Land Office**
