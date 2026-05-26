@@ -1,0 +1,1583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Texas GLO — Orphan-Well Inspection Priority + Lease/Habitat Conflicts</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<!-- Pinned versions + Subresource Integrity (SRI). If the CDN ever serves
+     a file whose hash doesn't match, the browser refuses to execute it. -->
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"
+      crossorigin="anonymous" />
+<link rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/leaflet-groupedlayercontrol@0.6.1/dist/leaflet.groupedlayercontrol.min.css"
+      integrity="sha384-jTaPj8/7LfdZXicEJ/SUWan4gkbYw6lXyoRUNPMmNV3fYVfBzHJK8wD6A8Djh+3A"
+      crossorigin="anonymous" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-groupedlayercontrol@0.6.1/dist/leaflet.groupedlayercontrol.min.js"
+        integrity="sha384-XAr1poM2RCR9/QQFki7ylrGSdmvYE0NuHghuRuxb/k9zJQA53y6qR5te5jJRZlcL"
+        crossorigin="anonymous"></script>
+<script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"
+        integrity="sha384-twf8YFpk0FSzm0AmW2GRJjjnqIuQ2y86vZXh2roYI8O+kFbEBjSUDUT6U72w8shL"
+        crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"
+        integrity="sha384-82q0nm29xZzIo5BMtDYnh2/NxeO6FoaK1S/0nF84w3cEsqbBfun3JdMyDVYWfVY5"
+        crossorigin="anonymous"></script>
+
+<style>
+  html, body { margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; }
+
+  .title-bar {
+    position: absolute; top: 10px; left: 60px; right: 340px;
+    background: rgba(255,255,255,0.92); padding: 8px 14px; border-radius: 6px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.25); z-index: 1000; font-size: 14px;
+  }
+  .title-bar h1 { margin: 0 0 2px 0; font-size: 16px; }
+  .title-bar p  { margin: 0; color: #444; font-size: 12px; }
+
+  .side-panel {
+    position: absolute; top: 10px; right: 10px; width: 320px;
+    max-height: calc(100vh - 20px); overflow-y: auto;
+    background: rgba(255,255,255,0.95); padding: 12px 14px;
+    border-radius: 6px; box-shadow: 0 1px 6px rgba(0,0,0,0.25);
+    z-index: 1000; font-size: 12px; line-height: 1.4;
+  }
+  .side-panel h2 { font-size: 13px; margin: 12px 0 6px 0; border-bottom: 1px solid #ddd; padding-bottom: 2px; }
+  .side-panel h2:first-of-type { margin-top: 0; }
+  .legend-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  .legend-swatch { width: 22px; height: 10px; border: 1px solid #555; display: inline-block; }
+  .legend-circle { width: 12px; height: 12px; border-radius: 50%; border: 1px solid #555; display: inline-block; }
+  .legend-stripe { width: 22px; height: 3px; display: inline-block; }
+  .legend-dashed { width: 22px; height: 0; border-top: 2px dashed; display: inline-block; }
+
+  button.action {
+    width: 100%; padding: 6px 8px; margin: 4px 0; border: 1px solid #888;
+    background: #f4f4f4; cursor: pointer; border-radius: 4px; font-size: 12px;
+  }
+  button.action:hover { background: #e4e4e4; }
+  button.action.primary { background: #2a6fb5; color: #fff; border-color: #1d5894; }
+  button.action.primary:hover { background: #1d5894; }
+
+  #status { font-size: 11px; color: #444; min-height: 14px; margin-top: 4px; }
+  .conflict-count { font-weight: 600; color: #b8002e; }
+
+  .progress-wrap {
+    display: none; margin: 6px 0 4px 0;
+    height: 12px; background: #e6e6e6; border-radius: 3px;
+    overflow: hidden; position: relative;
+    border: 1px solid #bbb;
+  }
+  .progress-wrap.active { display: block; }
+  .progress-bar {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #2a6fb5, #4a90d9);
+    transition: width 120ms linear;
+  }
+  .progress-wrap.indeterminate .progress-bar {
+    width: 40%;
+    background: linear-gradient(90deg, transparent 0%, #4a90d9 50%, transparent 100%);
+    animation: indet 1.1s linear infinite;
+  }
+  @keyframes indet {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(250%); }
+  }
+  .progress-label {
+    font-size: 10px; color: #444; margin-top: 2px;
+    display: flex; justify-content: space-between;
+  }
+
+  .leaflet-popup-content { font-size: 12px; line-height: 1.35; max-width: 300px; }
+  .leaflet-popup-content table { border-collapse: collapse; }
+  .leaflet-popup-content td { padding: 1px 6px 1px 0; vertical-align: top; }
+  .leaflet-popup-content td.k { color: #666; font-weight: 600; }
+
+  /* compact grouped layer control */
+  .leaflet-control-layers-expanded { max-height: 80vh; overflow-y: auto; font-size: 12px; }
+  .leaflet-control-layers-group-name { font-weight: 700; margin-top: 4px; color: #2a4d8f; }
+
+  /* Orphan-well priority table */
+  table.orphan-table {
+    width: 100%; border-collapse: collapse; margin-top: 4px;
+    font-size: 11px; table-layout: fixed;
+  }
+  table.orphan-table th, table.orphan-table td {
+    border-bottom: 1px solid #e0e0e0; padding: 2px 3px;
+    text-align: left; vertical-align: top;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  table.orphan-table th {
+    background: #f0f0f0; font-weight: 600; cursor: pointer;
+    position: sticky; top: 0;
+  }
+  table.orphan-table tr.orphan-row:hover { background: #fff2c2; cursor: pointer; }
+  table.orphan-table td.rank { font-weight: 700; color: #b8002e; text-align: center; }
+  table.orphan-table td.score { font-weight: 600; text-align: right; }
+  table.orphan-table .col-rank { width: 22px; }
+  table.orphan-table .col-lease { width: 70px; }
+  table.orphan-table .col-score { width: 30px; }
+  table.orphan-table .col-env { width: 26px; }
+  table.orphan-table .col-age { width: 32px; }
+  table.orphan-table .col-str { width: 22px; }
+
+  .score-bar {
+    display: inline-block; height: 4px; background: #b8002e; border-radius: 2px;
+    vertical-align: middle; margin-right: 3px;
+  }
+
+  /* Ranked marker for top orphan candidates */
+  .rank-marker {
+    background: #b8002e; color: #fff; border: 2px solid #fff;
+    border-radius: 50%; width: 26px; height: 26px;
+    line-height: 22px; text-align: center; font-weight: 700; font-size: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+  .rank-marker.platform { background: #d97706; }
+  .rank-marker.inundated {
+    box-shadow: 0 0 0 3px #00a0ff, 0 0 10px #00a0ff, 0 1px 4px rgba(0,0,0,0.4);
+  }
+  .rank-marker.inundated.imminent {
+    box-shadow: 0 0 0 3px #002a99, 0 0 12px #002a99, 0 1px 4px rgba(0,0,0,0.5);
+  }
+
+  /* SLR slider tick marks */
+  .slr-tick-row {
+    display: flex; justify-content: space-between;
+    font-size: 9px; color: #666; margin-top: -2px;
+  }
+  .slr-scenario-label { font-size: 10px; color: #555; margin: 4px 0; }
+
+  /* Tools menu */
+  .tools-menu {
+    background: #f7f7f7; border: 1px solid #ddd; border-radius: 4px;
+    padding: 6px 8px; margin-bottom: 8px;
+  }
+  .tools-menu label { display: block; font-size: 12px; margin: 2px 0; cursor: pointer; }
+  .tools-menu .menu-title { font-weight: 700; font-size: 12px; color: #2a4d8f; margin-bottom: 3px; }
+
+  /* Hide section when its mode checkbox is off */
+  .section-tool.hidden { display: none; }
+
+  /* Pulse highlight for clicked well */
+  .pulse-ring {
+    position: relative;
+  }
+  @keyframes pulse-fade {
+    0%   { transform: scale(0.6); opacity: 1.0; }
+    100% { transform: scale(3.0); opacity: 0;   }
+  }
+
+  /* Selected row in orphan well list */
+  table.orphan-table tr.orphan-row.selected { background: #ffe0a0; }
+
+  /* Status flash for warnings (e.g. zoom too low) */
+  .status-flash {
+    background: #ffd5d5; border-left: 3px solid #cc0033;
+    padding: 4px 6px; border-radius: 3px;
+    animation: flash-bg 0.4s ease-in-out 2;
+  }
+  @keyframes flash-bg {
+    0%, 100% { background: #ffd5d5; }
+    50%      { background: #ffeeee; }
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="title-bar">
+  <h1>Texas GLO — Orphan-Well Inspection Priority &amp; Lease/Habitat Conflicts</h1>
+  <p>Ranks inactive O&amp;G leases (Expired / Terminated / Forfeited / Cancelled) by inspection priority using environmental sensitivity, abandonment age, and surviving offshore infrastructure. Also retains the lease × ESI / Priority Protection conflict tool.</p>
+</div>
+
+<div class="side-panel">
+
+  <div class="tools-menu">
+    <div class="menu-title">Tools — check what to show</div>
+    <label><input type="checkbox" id="mode-conflict" checked /> Conflict analysis</label>
+    <label><input type="checkbox" id="mode-orphan"   checked /> Orphan-well priority</label>
+    <label><input type="checkbox" id="mode-slr"               /> Sea-level rise risk</label>
+    <div style="font-size:11px;margin-top:4px;color:#555;">
+      Current zoom: <b id="zoom-indicator">—</b>
+      <span id="zoom-ok" style="display:none;color:#1a7a1a;">✓ ready</span>
+      <span id="zoom-bad" style="display:none;color:#cc0033;" id="zoom-bad-text">— zoom in to threshold</span>
+    </div>
+  </div>
+
+  <div id="section-conflict" class="section-tool">
+    <h2>Conflict analysis</h2>
+    <div>Zoom to a bay (level ≥ 8), then run:</div>
+    <button class="action primary" id="btn-conflicts">Find conflicts in current view</button>
+    <button class="action" id="btn-clear">Clear conflict highlights</button>
+    <label style="display:block;margin:4px 0;font-size:11px;">
+      <input type="checkbox" id="chk-esi-conflict" /> Also flag activity touching ESI ≥ 8 shoreline (slower)
+    </label>
+    <div id="progress-wrap" class="progress-wrap">
+      <div id="progress-bar" class="progress-bar"></div>
+    </div>
+    <div id="progress-label" class="progress-label" style="display:none;">
+      <span id="progress-phase">—</span><span id="progress-pct"></span>
+    </div>
+    <div id="status">Ready. Pan/zoom to a region, then click <em>Find conflicts</em>.</div>
+  </div>
+
+  <div id="section-orphan" class="section-tool">
+    <h2>Orphan-well inspection priority</h2>
+    <div style="font-size:11px;color:#555;margin-bottom:4px;">
+      Lists offshore <b>wells &amp; platforms</b> sitting inside inactive O&amp;G leases
+      with status <i>Expired / Terminated / Forfeited / Cancelled</i>.
+      Each well's priority inherits its parent lease's environmental sensitivity,
+      abandonment age, on-lease structure count and size, plus a small bonus for
+      asset type Well.
+    </div>
+    <button class="action primary" id="btn-orphans">Build orphan-well list</button>
+    <button class="action" id="btn-clear-orphans">Clear orphan rankings</button>
+    <label style="display:block;margin:4px 0;font-size:11px;">
+      Top N to map / list:
+      <input type="number" id="orphan-topn" value="15" min="1" max="100" style="width:50px;" />
+    </label>
+    <div id="orphan-progress-wrap" class="progress-wrap">
+      <div id="orphan-progress-bar" class="progress-bar"></div>
+    </div>
+    <div id="orphan-progress-label" class="progress-label" style="display:none;">
+      <span id="orphan-progress-phase">—</span><span id="orphan-progress-pct"></span>
+    </div>
+    <div id="orphan-status" style="font-size:11px;color:#444;min-height:14px;margin-top:4px;">
+      Pan/zoom to a region, then click <em>Build orphan-well list</em>.
+    </div>
+    <div id="orphan-table-wrap" style="margin-top:4px;"></div>
+    <div class="legend-row" style="margin-top:6px;">
+      <span class="legend-circle" style="background:#b8002e;border-color:#fff;width:14px;height:14px;"></span>
+      Top-ranked well (number = rank)
+    </div>
+    <div class="legend-row">
+      <span class="legend-circle" style="background:#d97706;border-color:#fff;width:14px;height:14px;"></span>
+      Top-ranked platform (number = rank)
+    </div>
+  </div>
+
+  <div id="section-slr" class="section-tool">
+    <h2>Sea-level rise risk</h2>
+    <div style="font-size:11px;color:#555;margin-bottom:4px;">
+      Primary modality: <b>inundation</b>. Once an orphan wellhead submerges,
+      casing/cement corrosion accelerates in saltwater, inspection access is
+      lost, and any leak releases directly into open water. This module
+      queries NOAA Office for Coastal Management's published inundation
+      polygons (1–10 ft above current Mean Higher High Water) and, for each
+      ranked orphan well, predicts the lowest SLR scenario at which it
+      becomes inundated.
+    </div>
+    <button class="action primary" id="btn-slr">Compute SLR thresholds (needs orphan list)</button>
+    <label style="display:flex;align-items:center;gap:6px;margin:8px 0 0 0;font-size:11px;">
+      Scenario:
+      <input type="range" id="slr-slider" min="0" max="10" step="0.1" value="0" style="flex:1;" />
+      <b id="slr-value" style="min-width:90px;text-align:right;font-variant-numeric:tabular-nums;">0.0 ft / 0.00 m</b>
+    </label>
+    <div class="slr-tick-row">
+      <span>0</span><span>2</span><span>4</span><span>6</span><span>8</span><span>10 ft</span>
+    </div>
+    <div class="slr-scenario-label" id="slr-scenario">Baseline (no SLR)</div>
+    <div id="slr-status" style="font-size:11px;color:#444;min-height:14px;margin-top:4px;">
+      Build the orphan-well list first, then click <em>Compute SLR thresholds</em>.
+    </div>
+    <div class="legend-row" style="margin-top:6px;">
+      <span class="legend-circle" style="background:#b8002e;border-color:#00a0ff;border-width:3px;width:14px;height:14px;"></span>
+      Inundated at current slider level
+    </div>
+    <div style="font-size:10px;color:#666;margin-top:6px;">
+      <b>Sources:</b>
+      <a href="https://coast.noaa.gov/digitalcoast/tools/slr.html" target="_blank" rel="noopener noreferrer">NOAA Sea Level Rise Viewer</a>
+      ·
+      <a href="https://oceanservice.noaa.gov/hazards/sealevelrise/sealevelrise-tech-report.html" target="_blank" rel="noopener noreferrer">Sweet et&nbsp;al. 2022 (NOAA TR NOS 01) US SLR scenarios</a>.
+      Bathtub-model assumption: does not include erosion, subsidence, or future construction.
+    </div>
+  </div>
+
+  <h2>ESI Shoreline (color = sensitivity)</h2>
+  <div class="legend-row"><span class="legend-stripe" style="background:#7a5230"></span>1 — exposed rocky / seawall</div>
+  <div class="legend-row"><span class="legend-stripe" style="background:#caa86a"></span>2 — exposed wave-cut</div>
+  <div class="legend-row"><span class="legend-stripe" style="background:#f1d65a"></span>3 — fine sand beaches</div>
+  <div class="legend-row"><span class="legend-stripe" style="background:#efa838"></span>4 — coarse sand</div>
+  <div class="legend-row"><span class="legend-stripe" style="background:#e57434"></span>5 — mixed sand/gravel</div>
+  <div class="legend-row"><span class="legend-stripe" style="background:#d34c2a"></span>6 — gravel beaches / riprap</div>
+  <div class="legend-row"><span class="legend-stripe" style="background:#b73228"></span>7 — exposed tidal flats</div>
+  <div class="legend-row"><span class="legend-stripe" style="background:#8b2a6c"></span>8 — sheltered shorelines</div>
+  <div class="legend-row"><span class="legend-stripe" style="background:#5a2a6e"></span>9 — sheltered tidal flats</div>
+  <div class="legend-row"><span class="legend-stripe" style="background:#2d2a6c"></span>10 — marshes / mangroves (most sensitive)</div>
+
+  <h2>Priority Protection Habitat</h2>
+  <div class="legend-row"><span class="legend-swatch" style="background:#cc0033;opacity:0.55"></span>High priority</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#ff9900;opacity:0.55"></span>Medium priority</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#ffcc66;opacity:0.55"></span>Low / unranked</div>
+
+  <h2>Leases &amp; activity</h2>
+  <div class="legend-row"><span class="legend-swatch" style="background:#1f78b4;opacity:0.45"></span>O&amp;G Leases — Active</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#7d7d7d;opacity:0.40"></span>O&amp;G Leases — Inactive</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#1a3d6b;opacity:0.45"></span>O&amp;G Units — Active</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#9e9e9e;opacity:0.35"></span>O&amp;G Units — Inactive</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#a6cee3;opacity:0.55"></span>O&amp;G Nominated Tracts</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#bf812d;opacity:0.55"></span>Hard Mineral Leases</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#33a02c;opacity:0.45"></span>Coastal Lease Polygons</div>
+  <div class="legend-row"><span class="legend-circle" style="background:#33a02c"></span>Coastal Lease Points</div>
+  <div class="legend-row"><span class="legend-stripe" style="background:#6a3d9a;height:2px"></span>Miscellaneous Easements</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#b2df8a;opacity:0.55"></span>Upland Surface Leases</div>
+  <div class="legend-row"><span class="legend-circle" style="background:#e31a1c"></span>Offshore O&amp;G Structures</div>
+
+  <h2>Land &amp; jurisdiction</h2>
+  <div class="legend-row"><span class="legend-swatch" style="background:#fdbf6f;opacity:0.40"></span>Permanent School Fund Lands</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#d9c79e;opacity:0.55"></span>State Agency Lands</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#c6dbef;opacity:0.55"></span>Submerged Tracts (w/ RMC)</div>
+  <div class="legend-row"><span class="legend-dashed" style="border-color:#003f7d"></span>Navigation Districts</div>
+  <div class="legend-row"><span class="legend-dashed" style="border-color:#cc0033;border-width:2.5px"></span>Coastal Zone Boundary</div>
+  <div class="legend-row"><span class="legend-stripe" style="background:#1f8a70;height:2px"></span>Three Nautical Mile Line</div>
+  <div class="legend-row"><span class="legend-stripe" style="background:#143d59;height:2px"></span>Three Marine League Line</div>
+
+  <h2>Spill response</h2>
+  <div class="legend-row"><span class="legend-dashed" style="border-color:#0072b2"></span>Dispersant Use Pre-Approval</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#e31a1c;opacity:0.30;border:1.5px dashed #b00"></span>In-Situ Burn Exclusion</div>
+  <div class="legend-row"><span class="legend-circle" style="background:#00ced1"></span>Beach &amp; Bay Access</div>
+
+  <h2>ESI Biology (species &amp; habitat)</h2>
+  <div class="legend-row"><span class="legend-swatch" style="background:#feb24c;opacity:0.55"></span>Birds (poly) / point colonies</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#41b6c4;opacity:0.55"></span>Fish</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#88419d;opacity:0.55"></span>Invertebrates</div>
+  <div class="legend-row"><span class="legend-swatch" style="background:#7fcdbb;opacity:0.55"></span>Habitat / Benthic / Mammals / Herp</div>
+
+  <h2>Conflict highlight</h2>
+  <div class="legend-row"><span class="legend-swatch" style="background:transparent;border:2px solid #ff00aa"></span>Activity ∩ sensitive habitat</div>
+
+  <h2>Source</h2>
+  <div>All layers: Texas General Land Office (GLO) public ArcGIS Hub, loaded live; nothing stored locally.</div>
+
+</div>
+
+<script>
+/* ---------- Service endpoints (GLO ArcGIS Hub) ---------- */
+const BASE = 'https://services1.arcgis.com/YWG34dhJxrbxQWdF/arcgis/rest/services';
+const SVC = {
+  esi:        BASE + '/Environmental_Sensitivity_Index_Shoreline_2024_view/FeatureServer/0',
+  ppa:        BASE + '/PriorityProtection_Habitat_Areas/FeatureServer/0',
+  ogLease:    BASE + '/Oil_and_Gas_Leases_Active/FeatureServer/0',
+  ogLeaseIn:  BASE + '/Oil_and_Gas_Leases_In_Active/FeatureServer/0',
+  ogUnit:     BASE + '/Oil_and_Gas_Units_Active/FeatureServer/0',
+  ogUnitIn:   BASE + '/Oil_and_Gas_Units_In_Active/FeatureServer/0',
+  ogNominated:BASE + '/Oil_and_Gas_Lease_Sale_Nominated_Tracts_(Public)/FeatureServer/0',
+  hardMineral:BASE + '/Hard_Minerals/FeatureServer/0',
+  coastPoly:  BASE + '/Coastal_Lease_Poly/FeatureServer/0',
+  coastPt:    BASE + '/Coastal_Lease_Points/FeatureServer/0',
+  miscEase:   BASE + '/Miscellaneous_Easements/FeatureServer/0',
+  uplandLease:BASE + '/Upland_Leases/FeatureServer/0',
+  offshore:   BASE + '/OffshoreInventoryPublic/FeatureServer/0',
+  psf:        BASE + '/Permanent_School_Fund_Lands/FeatureServer/0',
+  stateAgency:BASE + '/State_Agency_Lands/FeatureServer/0',
+  submerged:  BASE + '/Texas_Submerged_Land_Tracts/FeatureServer/7',
+  navDist:    BASE + '/Navigation_Districts/FeatureServer/0',
+  coastalZone:BASE + '/Coastal_Zone/FeatureServer/0',
+  threeNm:    BASE + '/Three_Nautical_Mile_Line/FeatureServer/0',
+  threeLeague:BASE + '/Three_Marine_League_Line/FeatureServer/0',
+  dispersant: BASE + '/DispersantZone/FeatureServer/0',
+  burnExcl:   BASE + '/InSituBurnExclusionArea/FeatureServer/0',
+  beachAccess:BASE + '/Texas_Beach_and_Bay_Access_(Public)/FeatureServer/0',
+  bioBenthic: BASE + '/ESIBio25M_view/FeatureServer/0',
+  bioBirds:   BASE + '/ESIBio25M_view/FeatureServer/1',
+  bioFish:    BASE + '/ESIBio25M_view/FeatureServer/2',
+  bioHabitat: BASE + '/ESIBio25M_view/FeatureServer/3',
+  bioHerp:    BASE + '/ESIBio25M_view/FeatureServer/4',
+  bioInvert:  BASE + '/ESIBio25M_view/FeatureServer/5',
+  bioMMammal: BASE + '/ESIBio25M_view/FeatureServer/6',
+  bioTMammal: BASE + '/ESIBio25M_view/FeatureServer/7',
+  bioBirdsPt: BASE + '/ESIBio25M_view/FeatureServer/8'
+};
+
+/* ---------- Map ---------- */
+const map = L.map('map', { zoomControl: true }).setView([28.4, -96.0], 7);
+const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+const esriImagery = L.esri.basemapLayer('Imagery');
+const esriOcean   = L.esri.basemapLayer('Oceans');
+
+/* ---------- Symbology helpers ---------- */
+function esiColor(rank) {
+  const ramp = {1:'#7a5230',2:'#caa86a',3:'#f1d65a',4:'#efa838',5:'#e57434',
+                6:'#d34c2a',7:'#b73228',8:'#8b2a6c',9:'#5a2a6e',10:'#2d2a6c'};
+  return ramp[rank] || '#888';
+}
+function esiRank(esiStr) {
+  const m = String(esiStr || '').match(/^(\d+)/);
+  return m ? Math.min(10, parseInt(m[1], 10)) : 0;
+}
+function esiStyle(f) { return { color: esiColor(esiRank(f.properties.ESI)), weight: 3, opacity: 0.9 }; }
+
+function ppaColor(p) {
+  const s = String(p || '').toLowerCase();
+  if (s.startsWith('h') || s === '1') return '#cc0033';
+  if (s.startsWith('m') || s === '2') return '#ff9900';
+  return '#ffcc66';
+}
+function ppaStyle(f) {
+  return { color: '#444', weight: 0.6, fillColor: ppaColor(f.properties.PRIORITY), fillOpacity: 0.55 };
+}
+
+const fillStyle = (fill, line, op = 0.45, w = 0.6) =>
+  () => ({ color: line, weight: w, fillColor: fill, fillOpacity: op });
+const lineStyle = (color, w = 2, dash = null) =>
+  () => ({ color, weight: w, opacity: 0.9, dashArray: dash, fill: false });
+
+/* ---------- HTML-escape for external field values ---------- */
+// External data comes from public GLO/NOAA REST services and is treated as
+// untrusted. Hardcoded labels and our own template HTML stay unescaped.
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+/* ---------- Popup helper ---------- */
+// tbl() takes [label, value] pairs. Values can either be:
+//   • a plain string/number — will be HTML-escaped (safe default), OR
+//   • an object { raw: '<b>...</b>' } — inserted verbatim (caller-trusted).
+function tbl(rows) {
+  return '<table>' + rows
+    .filter(r => {
+      const v = r[1];
+      if (v === null || v === undefined) return false;
+      if (typeof v === 'object' && v.raw !== undefined) return String(v.raw).length > 0;
+      return String(v).trim() !== '';
+    })
+    .map(r => {
+      const v = r[1];
+      const cell = (typeof v === 'object' && v.raw !== undefined) ? v.raw : esc(v);
+      return `<tr><td class="k">${esc(r[0])}</td><td>${cell}</td></tr>`;
+    }).join('') + '</table>';
+}
+function popupBinder(title, fieldList) {
+  return (f, l) => {
+    const p = f.properties;
+    const rows = fieldList.map(([label, key]) => [label, p[key]]);
+    l.bindPopup(`<b>${esc(title)}</b>` + tbl(rows));
+  };
+}
+
+/* ---------- Feature-layer factory ---------- */
+function fl(url, opts) {
+  return L.esri.featureLayer(Object.assign({ url }, opts));
+}
+const pointMarker = (color, r = 5) => (g, ll) =>
+  L.circleMarker(ll, { radius: r, color: '#333', weight: 0.8, fillColor: color, fillOpacity: 0.85 });
+
+/* ---------- Build all layers ---------- */
+const LYRS = {};
+
+// Sensitive habitat
+LYRS.esi = fl(SVC.esi, {
+  style: esiStyle, minZoom: 8,
+  onEachFeature: popupBinder('ESI Shoreline',
+    [['ESI','ESI'],['Type','GENERALIZED_ESI_TYPE'],
+     ['Landward','LANDWARD_SHORETYPE'],
+     ['Seaward 1','SEAWARD_SHORETYPE1'],['Seaward 2','SEAWARD_SHORETYPE2'],
+     ['Environment','ENVIR'],['Most sensitive','MOST_SENSITIVE']])
+});
+LYRS.ppa = fl(SVC.ppa, {
+  style: ppaStyle,
+  onEachFeature: popupBinder('Priority Protection Habitat',
+    [['Priority','PRIORITY'],['PPA ID','PPA_ID'],['Description','POLY_DESC'],
+     ['Birds','BIRDS_RANK'],['Birds detail','BIRDS_DESC'],
+     ['Fish','FISH_RANK'],['Fish detail','FISH_DESC'],
+     ['Wetlands','WETLANDS_R'],['Wetlands detail','WETLANDS_D']])
+});
+
+// Leases & activity
+const leasePopup = (title) => popupBinder(title,
+  [['Lease #','LEASE_NUMBER'],['Status','LEASE_STATUS'],
+   ['Lessee','ORIGINAL_LESSEE'],['Lessor','LESSOR'],
+   ['Type','LEASE_TYPE'],['Field','FIELD_NAME'],
+   ['Effective','EFFECTIVE_DATE'],['Primary term ends','PRIMARY_TERM_END_DATE'],
+   ['Gross acres','CURRENT_GROSS_ACRES'],['Net acres','CURRENT_NET_ACRES']]);
+
+LYRS.ogLease    = fl(SVC.ogLease,    { style: fillStyle('#1f78b4','#08519c'),   minZoom: 9,  onEachFeature: leasePopup('Oil & Gas Lease — Active') });
+LYRS.ogLeaseIn  = fl(SVC.ogLeaseIn,  { style: fillStyle('#7d7d7d','#555',0.40), minZoom: 9,  onEachFeature: leasePopup('Oil & Gas Lease — Inactive') });
+LYRS.ogUnit     = fl(SVC.ogUnit,     { style: fillStyle('#1a3d6b','#0a1e3a'),   minZoom: 9,  onEachFeature: leasePopup('Oil & Gas Unit — Active') });
+LYRS.ogUnitIn   = fl(SVC.ogUnitIn,   { style: fillStyle('#9e9e9e','#666',0.35), minZoom: 10, onEachFeature: leasePopup('Oil & Gas Unit — Inactive') });
+LYRS.ogNominated= fl(SVC.ogNominated,{ style: fillStyle('#a6cee3','#1f78b4',0.55), minZoom: 8,
+  onEachFeature: popupBinder('O&G Nominated Tract', [['OBJECTID','OBJECTID']]) });
+LYRS.hardMineral= fl(SVC.hardMineral,{ style: fillStyle('#bf812d','#8c510a',0.55), minZoom: 8, onEachFeature: leasePopup('Hard Mineral Lease') });
+
+LYRS.coastPoly  = fl(SVC.coastPoly,  { style: fillStyle('#33a02c','#1b6e1a'),     minZoom: 9,
+  onEachFeature: popupBinder('Coastal Lease (Polygon)', [['GLO ID','GLO_ID']]) });
+LYRS.coastPt    = fl(SVC.coastPt, { minZoom: 10, pointToLayer: pointMarker('#33a02c', 4),
+  onEachFeature: popupBinder('Coastal Lease (Point)', [['GLO ID','chrGloId'],['Class','chrClassName']]) });
+
+LYRS.miscEase   = fl(SVC.miscEase, { style: lineStyle('#6a3d9a', 1.8), minZoom: 9,
+  onEachFeature: popupBinder('Miscellaneous Easement',
+    [['Project #','PROJECT_NUMBER'],['Project','PROJECT_NAME'],
+     ['Lease #','LEASE_NUMBER'],['Status','LEASE_STATUS'],
+     ['Activity','ACTIVITY'],['Primary lessee','PRIMARY_LESSEE']]) });
+
+LYRS.uplandLease= fl(SVC.uplandLease, { style: fillStyle('#b2df8a','#33a02c',0.55), minZoom: 9,
+  onEachFeature: popupBinder('Upland Surface Lease',
+    [['Project #','PROJECT_NUMBER'],['Project','PROJECT_NAME'],
+     ['Lease #','LEASE_NUMBER'],['Status','LEASE_STATUS'],
+     ['Activity','ACTIVITY'],['Primary lessee','PRIMARY_LESSEE']]) });
+
+LYRS.offshore   = fl(SVC.offshore, { minZoom: 9, pointToLayer: pointMarker('#e31a1c', 4),
+  onEachFeature: popupBinder('Offshore O&G Structure',
+    [['OSII #','OSIIDNumber'],['Type','LocType'],['Field type','FieldLocType'],
+     ['Tract','TRACT_NUMBER'],['Waterbody','WATERBODY']]) });
+
+// Land & jurisdiction
+LYRS.psf = fl(SVC.psf, { style: fillStyle('#fdbf6f','#e08214',0.40), minZoom: 10,
+  onEachFeature: popupBinder('Permanent School Fund Land',
+    [['Grantee','Grantee'],['Control #','ControlNumber'],['Survey','Survey'],
+     ['County','County'],['Section','SectionNumber'],['Block','Block'],
+     ['Township','Township'],['Abstract','Abstract']]) });
+LYRS.stateAgency = fl(SVC.stateAgency, { style: fillStyle('#d9c79e','#a67c00',0.55), minZoom: 9,
+  onEachFeature: popupBinder('State Agency Land',
+    [['Control #','CONTROLNUM'],['Survey','varSurveyName'],['County','varLandCountyName'],
+     ['Section/Tract','varSectionTract'],['Land type','varLandType'],['Name','varLandName']]) });
+LYRS.submerged   = fl(SVC.submerged, { style: fillStyle('#c6dbef','#3182bd',0.45), minZoom: 10,
+  onEachFeature: popupBinder('Submerged Tract',
+    [['Tract','TRACT_NUMBER'],['Control #','CONTROLNUM'],['Land type','LAND_TYPE'],
+     ['Part','PART'],['Waterbody','WATERBODY'],['RMC','RMC_COMBINED']]) });
+LYRS.navDist     = fl(SVC.navDist, { style: () => ({color:'#003f7d',weight:1.5,dashArray:'5,4',fillColor:'#003f7d',fillOpacity:0.08}),
+  onEachFeature: popupBinder('Navigation District',
+    [['District','DISTRICT_N'],['File #','FILE_NO'],['Patent','PATENT'],
+     ['Tract','TRACT_NO'],['Deed','DEED'],['Control #','CONTROLNUM'],['Land type','LAND_TYPE']]) });
+LYRS.coastalZone = fl(SVC.coastalZone, { style: () => ({color:'#cc0033',weight:2.5,dashArray:'7,5',fill:false}),
+  onEachFeature: popupBinder('Texas Coastal Zone Boundary', [['OBJECTID','OBJECTID']]) });
+LYRS.threeNm     = fl(SVC.threeNm,     { style: lineStyle('#1f8a70', 2),
+  onEachFeature: popupBinder('Three Nautical Mile Line', [['OBJECTID','OBJECTID']]) });
+LYRS.threeLeague = fl(SVC.threeLeague, { style: lineStyle('#143d59', 2),
+  onEachFeature: popupBinder('Three Marine League Line', [['OBJECTID','OBJECTID']]) });
+
+// Spill response
+LYRS.dispersant = fl(SVC.dispersant, { style: lineStyle('#0072b2', 2.2, '6,4'),
+  onEachFeature: popupBinder('Dispersant Pre-Approval Zone', [['OBJECTID','OBJECTID']]) });
+LYRS.burnExcl   = fl(SVC.burnExcl, { style: () => ({color:'#b00',weight:1.5,dashArray:'4,3',fillColor:'#e31a1c',fillOpacity:0.30}),
+  onEachFeature: popupBinder('In-Situ Burn Exclusion',
+    [['Subclass','SUBCLASS'],['Type','TYPE'],['Name','EXCL_NAME']]) });
+LYRS.beachAccess = fl(SVC.beachAccess, { minZoom: 9, pointToLayer: pointMarker('#00ced1', 4),
+  onEachFeature: popupBinder('Beach & Bay Access',
+    [['TCAP ID','TCAPID'],['Site','SiteName'],['Type','SiteType'],
+     ['County','County'],['Description','LocationDescription']]) });
+
+// ESI Biology — group all sublayers
+const bioPopup = (title) => popupBinder(title,
+  [['Element','ELEMENT'],['Subelement','SUBELEMENT'],['Name','NAME'],
+   ['Genus/species','GEN_SPEC'],['State','STATE'],['Federal','F'],
+   ['Concentration','CONC']]);
+LYRS.bioBenthic  = fl(SVC.bioBenthic,  { style: fillStyle('#7fcdbb','#1d8275',0.45), minZoom: 8, onEachFeature: bioPopup('ESI Biology — Benthic') });
+LYRS.bioBirds    = fl(SVC.bioBirds,    { style: fillStyle('#feb24c','#cc6600',0.45), minZoom: 8, onEachFeature: bioPopup('ESI Biology — Birds') });
+LYRS.bioFish     = fl(SVC.bioFish,     { style: fillStyle('#41b6c4','#1d6a85',0.45), minZoom: 8, onEachFeature: bioPopup('ESI Biology — Fish') });
+LYRS.bioHabitat  = fl(SVC.bioHabitat,  { style: fillStyle('#7fcdbb','#1d8275',0.55), minZoom: 8, onEachFeature: bioPopup('ESI Biology — Habitat') });
+LYRS.bioHerp     = fl(SVC.bioHerp,     { style: fillStyle('#a6d96a','#558b2f',0.55), minZoom: 9, onEachFeature: bioPopup('ESI Biology — Reptiles/Amphibians') });
+LYRS.bioInvert   = fl(SVC.bioInvert,   { style: fillStyle('#88419d','#4a1c63',0.45), minZoom: 8, onEachFeature: bioPopup('ESI Biology — Invertebrates') });
+LYRS.bioMMammal  = fl(SVC.bioMMammal,  { style: fillStyle('#9ecae1','#3182bd',0.55), minZoom: 9, onEachFeature: bioPopup('ESI Biology — Marine Mammals') });
+LYRS.bioTMammal  = fl(SVC.bioTMammal,  { style: fillStyle('#fdae6b','#a6361a',0.55), minZoom: 9, onEachFeature: bioPopup('ESI Biology — Terrestrial Mammals') });
+LYRS.bioBirdsPt  = fl(SVC.bioBirdsPt,  { minZoom: 9, pointToLayer: pointMarker('#ff6600', 5),
+  onEachFeature: bioPopup('ESI Biology — Bird Colony (point)') });
+
+/* ---------- Default-on layers (lightweight + most useful for synergized view) ---------- */
+const DEFAULT_ON = ['ppa','esi','coastalZone','threeNm','ogLease','coastPoly','coastPt','offshore'];
+DEFAULT_ON.forEach(k => LYRS[k].addTo(map));
+
+/* ---------- Grouped layer control ---------- */
+const groupedOverlays = {
+  'Sensitive habitat': {
+    'ESI Shoreline (color = sensitivity)': LYRS.esi,
+    'Priority Protection Habitat Areas':   LYRS.ppa
+  },
+  'ESI Biology (species & habitat)': {
+    'Birds (polygons)':           LYRS.bioBirds,
+    'Bird colonies (points)':     LYRS.bioBirdsPt,
+    'Fish':                       LYRS.bioFish,
+    'Invertebrates':              LYRS.bioInvert,
+    'Benthic':                    LYRS.bioBenthic,
+    'Habitat':                    LYRS.bioHabitat,
+    'Marine mammals':             LYRS.bioMMammal,
+    'Terrestrial mammals':        LYRS.bioTMammal,
+    'Reptiles / amphibians':      LYRS.bioHerp
+  },
+  'Leases & activity': {
+    'Oil & Gas Leases — Active':       LYRS.ogLease,
+    'Oil & Gas Leases — Inactive':     LYRS.ogLeaseIn,
+    'Oil & Gas Units — Active':        LYRS.ogUnit,
+    'Oil & Gas Units — Inactive':      LYRS.ogUnitIn,
+    'O&G Lease-Sale Nominated Tracts': LYRS.ogNominated,
+    'Hard Mineral Leases':             LYRS.hardMineral,
+    'Coastal Lease Polygons':          LYRS.coastPoly,
+    'Coastal Lease Points':            LYRS.coastPt,
+    'Miscellaneous Easements':         LYRS.miscEase,
+    'Upland Surface Leases':           LYRS.uplandLease,
+    'Offshore O&G Structures':         LYRS.offshore
+  },
+  'Land & jurisdiction': {
+    'Permanent School Fund Lands':  LYRS.psf,
+    'State Agency Lands':           LYRS.stateAgency,
+    'Submerged Tracts (with RMC)':  LYRS.submerged,
+    'Navigation Districts':         LYRS.navDist,
+    'Coastal Zone Boundary':        LYRS.coastalZone,
+    'Three Nautical Mile Line':     LYRS.threeNm,
+    'Three Marine League Line':     LYRS.threeLeague
+  },
+  'Spill response': {
+    'Dispersant Pre-Approval Zone': LYRS.dispersant,
+    'In-Situ Burn Exclusion':       LYRS.burnExcl,
+    'Beach & Bay Access':           LYRS.beachAccess
+  }
+};
+
+L.control.groupedLayers(
+  { 'OpenStreetMap': osm, 'Esri Imagery': esriImagery, 'Esri Oceans': esriOcean },
+  groupedOverlays,
+  { collapsed: false, position: 'topleft', exclusiveGroups: [] }
+).addTo(map);
+
+L.control.scale({ imperial: true, metric: true }).addTo(map);
+
+/* ---------- Conflict detection ---------- */
+// Activity layers checked for overlap with sensitive habitat
+const ACTIVITY_LAYERS = [
+  { svc: SVC.ogLease,     name: 'O&G Lease (Active)',    fields: ['LEASE_NUMBER','ORIGINAL_LESSEE','LEASE_STATUS','CURRENT_GROSS_ACRES'] },
+  { svc: SVC.ogLeaseIn,   name: 'O&G Lease (Inactive)',  fields: ['LEASE_NUMBER','ORIGINAL_LESSEE','LEASE_STATUS'] },
+  { svc: SVC.ogUnit,      name: 'O&G Unit (Active)',     fields: ['LEASE_NUMBER','ORIGINAL_LESSEE','LEASE_STATUS'] },
+  { svc: SVC.ogUnitIn,    name: 'O&G Unit (Inactive)',   fields: ['LEASE_NUMBER','ORIGINAL_LESSEE','LEASE_STATUS'] },
+  { svc: SVC.ogNominated, name: 'O&G Nominated Tract',   fields: ['OBJECTID'] },
+  { svc: SVC.hardMineral, name: 'Hard Mineral Lease',    fields: ['LEASE_NUMBER','ORIGINAL_LESSEE','LEASE_STATUS'] },
+  { svc: SVC.coastPoly,   name: 'Coastal Lease Polygon', fields: ['GLO_ID'] },
+  { svc: SVC.coastPt,     name: 'Coastal Lease Point',   fields: ['chrGloId','chrClassName'] },
+  { svc: SVC.miscEase,    name: 'Misc Easement',         fields: ['PROJECT_NUMBER','PROJECT_NAME','LEASE_NUMBER','PRIMARY_LESSEE','ACTIVITY'] },
+  { svc: SVC.uplandLease, name: 'Upland Surface Lease',  fields: ['PROJECT_NUMBER','PROJECT_NAME','LEASE_NUMBER','PRIMARY_LESSEE','ACTIVITY'] },
+  { svc: SVC.offshore,    name: 'Offshore O&G Structure',fields: ['OSIIDNumber','LocType','FieldLocType','TRACT_NUMBER','WATERBODY'] }
+];
+
+const conflictGroup = L.layerGroup().addTo(map);
+const statusEl = document.getElementById('status');
+const setStatus = (h) => { statusEl.innerHTML = h; };
+
+function bboxToEsriGeom(b) {
+  return { xmin: b.getWest(), ymin: b.getSouth(), xmax: b.getEast(), ymax: b.getNorth(),
+           spatialReference: { wkid: 4326 } };
+}
+async function queryGeoJSON(url, params) {
+  const qs = new URLSearchParams({
+    where: params.where || '1=1',
+    geometry: JSON.stringify(params.geometry),
+    geometryType: 'esriGeometryEnvelope',
+    inSR: '4326', outSR: '4326',
+    spatialRel: params.spatialRel || 'esriSpatialRelIntersects',
+    outFields: params.outFields || '*',
+    returnGeometry: 'true', f: 'geojson',
+    resultRecordCount: '2000'
+  });
+  const res = await fetch(`${url}/query?${qs}`);
+  if (!res.ok) throw new Error(`Query failed: ${res.status}`);
+  return res.json();
+}
+
+function addConflictFeature(feat, kind, hit, popupRows) {
+  const sensLabel = hit.PRIORITY ? `Priority Protection (${hit.PRIORITY})`
+                   : hit.ESI ? `ESI ${hit.ESI} — ${hit.GENERALIZED_ESI_TYPE || ''}`
+                   : 'sensitive habitat';
+  const isPoint = feat.geometry.type === 'Point';
+  const layer = isPoint
+    ? L.circleMarker([feat.geometry.coordinates[1], feat.geometry.coordinates[0]],
+        { radius: 7, color:'#ff00aa', weight: 2.5, fillColor:'#ff00aa', fillOpacity: 0.35 })
+    : L.geoJSON(feat, { style: { color:'#ff00aa', weight: 2.5, fillColor:'#ff00aa', fillOpacity: 0.18 } });
+  layer.bindPopup(`<b>Conflict — ${esc(kind)}</b>` + tbl(popupRows.concat([['Overlaps', sensLabel]])));
+  conflictGroup.addLayer(layer);
+}
+
+// Cheap axis-aligned bbox-overlap test (a, b are [minX,minY,maxX,maxY])
+function bboxOverlap(a, b) {
+  return !(a[0] > b[2] || a[2] < b[0] || a[1] > b[3] || a[3] < b[1]);
+}
+const yieldToUI = () => new Promise(r => setTimeout(r, 0));
+
+// Progress-bar helpers
+const PB = {
+  wrap:  document.getElementById('progress-wrap'),
+  bar:   document.getElementById('progress-bar'),
+  label: document.getElementById('progress-label'),
+  phase: document.getElementById('progress-phase'),
+  pct:   document.getElementById('progress-pct'),
+  show(phaseText) {
+    this.wrap.classList.add('active');
+    this.label.style.display = 'flex';
+    this.phase.textContent = phaseText;
+    this.pct.textContent = '';
+  },
+  indeterminate(phaseText) {
+    this.show(phaseText);
+    this.wrap.classList.add('indeterminate');
+    this.bar.style.width = '';
+    this.pct.textContent = '';
+  },
+  determinate(phaseText, done, total) {
+    this.show(phaseText);
+    this.wrap.classList.remove('indeterminate');
+    const pct = total > 0 ? Math.min(100, Math.round(100 * done / total)) : 0;
+    this.bar.style.width = pct + '%';
+    this.pct.textContent = `${done}/${total} (${pct}%)`;
+  },
+  hide() {
+    this.wrap.classList.remove('active', 'indeterminate');
+    this.label.style.display = 'none';
+    this.bar.style.width = '0%';
+  }
+};
+
+function flashConflictStatus() {
+  const el = document.getElementById('status');
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  el.classList.add('status-flash');
+  setTimeout(() => el.classList.remove('status-flash'), 1500);
+}
+
+document.getElementById('btn-conflicts').addEventListener('click', async () => {
+  conflictGroup.clearLayers();
+  if (map.getZoom() < 8) {
+    setStatus(`Zoom in further (current zoom = ${map.getZoom()}; need ≥ 8) before running conflict detection.`);
+    flashConflictStatus();
+    return;
+  }
+  document.getElementById('status').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  const btn = document.getElementById('btn-conflicts');
+  btn.disabled = true;
+  const env = bboxToEsriGeom(map.getBounds());
+  const includeEsi = document.getElementById('chk-esi-conflict').checked;
+
+  try {
+    // --- Phase 1: sensitive habitat ----------------------------------
+    PB.indeterminate('Fetching sensitive habitat…');
+    setStatus('Fetching Priority Protection / ESI…');
+    await yieldToUI();
+
+    const ppa = await queryGeoJSON(SVC.ppa, { geometry: env, outFields: 'PPA_ID,PRIORITY,POLY_DESC' });
+    const esiSens = includeEsi
+      ? await queryGeoJSON(SVC.esi, { geometry: env,
+          where: "ESI LIKE '8%' OR ESI LIKE '9%' OR ESI LIKE '10%'",
+          outFields: 'ESI,GENERALIZED_ESI_TYPE' })
+      : { features: [] };
+
+    if (!ppa.features.length && !esiSens.features.length) {
+      PB.hide();
+      setStatus('No Priority Protection polygons (or ESI≥8 shoreline) in current view.');
+      btn.disabled = false; return;
+    }
+
+    // Precompute sensitive features with cached bboxes (buffer ESI lines ~50 m)
+    const sensitive = [];
+    for (const f of ppa.features) {
+      try { sensitive.push({ feat: f, bbox: turf.bbox(f) }); } catch (e) {}
+    }
+    for (const f of esiSens.features) {
+      try {
+        const buf = turf.buffer(f, 0.05, { units: 'kilometers' });
+        if (buf) sensitive.push({ feat: buf, bbox: turf.bbox(buf) });
+      } catch (e) {}
+    }
+
+    // --- Phase 2: activity layers (parallel fetch with per-layer progress) ---
+    let layersDone = 0;
+    PB.determinate('Fetching activity layers…', 0, ACTIVITY_LAYERS.length);
+    setStatus(`Fetching ${ACTIVITY_LAYERS.length} activity layers in viewport…`);
+    await yieldToUI();
+
+    const results = await Promise.all(ACTIVITY_LAYERS.map(async (lyr) => {
+      try {
+        const data = await queryGeoJSON(lyr.svc, { geometry: env, outFields: lyr.fields.join(',') });
+        layersDone++;
+        PB.determinate('Fetching activity layers…', layersDone, ACTIVITY_LAYERS.length);
+        return { lyr, features: data.features };
+      } catch (e) {
+        layersDone++;
+        PB.determinate('Fetching activity layers…', layersDone, ACTIVITY_LAYERS.length);
+        return { lyr, features: [], error: e.message };
+      }
+    }));
+
+    // --- Phase 3: intersection check (determinate by feature count) ---
+    const totalFeats = results.reduce((s, r) => s + r.features.length, 0);
+    setStatus(`Checking ${totalFeats} activity features against ${sensitive.length} sensitive areas…`);
+    PB.determinate('Checking intersections…', 0, totalFeats);
+    await yieldToUI();
+
+    let conflicts = 0, processed = 0;
+    const perLayerCounts = [];
+    const YIELD_EVERY = 40;
+    for (const { lyr, features } of results) {
+      let hits = 0;
+      for (const f of features) {
+        processed++;
+        if (processed % YIELD_EVERY === 0) {
+          PB.determinate('Checking intersections…', processed, totalFeats);
+          setStatus(`Checking ${processed}/${totalFeats} activity features… (${conflicts} conflicts so far)`);
+          await yieldToUI();
+        }
+        let fbbox;
+        try { fbbox = turf.bbox(f); } catch (e) { continue; }
+        let hit = null;
+        for (const s of sensitive) {
+          if (!bboxOverlap(fbbox, s.bbox)) continue;
+          try { if (turf.booleanIntersects(f, s.feat)) { hit = s.feat.properties; break; } }
+          catch (e) {}
+        }
+        if (hit) {
+          hits++; conflicts++;
+          addConflictFeature(f, lyr.name, hit, lyr.fields.map(k => [k, f.properties[k]]));
+        }
+      }
+      perLayerCounts.push(`${lyr.name}: ${hits}/${features.length}`);
+    }
+
+    PB.determinate('Done', totalFeats, totalFeats);
+    setTimeout(() => PB.hide(), 800);
+
+    const esiNote = includeEsi ? `${esiSens.features.length} sensitive ESI segments, ` : '';
+    const truncNote = (totalFeats >= 11 * 2000 - 100)
+      ? '<br/><small style="color:#a00">Note: at least one layer may have hit the 2000-feature server cap. Zoom in for full coverage.</small>' : '';
+    setStatus(
+      `In view: ${ppa.features.length} priority polygons, ${esiNote}` +
+      `${totalFeats} activity features across ${ACTIVITY_LAYERS.length} layers.<br/>` +
+      `<span class="conflict-count">${conflicts}</span> conflict feature(s) highlighted in pink.<br/>` +
+      `<small style="color:#666">` + perLayerCounts.join(' · ') + `</small>` + truncNote
+    );
+  } catch (err) {
+    console.error(err);
+    PB.hide();
+    setStatus(`Error: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  conflictGroup.clearLayers();
+  setStatus('Highlights cleared.');
+});
+
+/* =====================================================================
+ *  ORPHAN-WELL INSPECTION PRIORITY
+ *  Candidate = inactive O&G lease with status ∈
+ *    { Expired, Terminated, Forfeited, Cancelled }
+ *  Priority score (per candidate):
+ *    env_score     0..4   (PPA priority 0..3) + (touches ESI≥8 +1)
+ *    age_score     0..3   yrs since LEASE_STATUS_DATE: >=20→3, 10→2, 5→1
+ *    struct_score  0..3   offshore Wells/Platforms inside polygon
+ *    size_score    0..2   acres >=100→2, >=10→1
+ *    TOTAL = 2*env + age + struct + size            (max ≈ 16)
+ * ===================================================================== */
+
+const ORPHAN_STATUSES = ['Expired', 'Terminated', 'Forfeited', 'Cancelled'];
+const ORPHAN_ASSET_TYPES = ['Well', 'Platform'];
+const orphanGroup = L.layerGroup().addTo(map);
+
+// separate progress bar instance bound to the orphan controls
+function makePB(wrapId, barId, labelId, phaseId, pctId) {
+  const $ = (id) => document.getElementById(id);
+  const wrap = $(wrapId), bar = $(barId), label = $(labelId), phase = $(phaseId), pct = $(pctId);
+  return {
+    indeterminate(t) {
+      wrap.classList.add('active','indeterminate');
+      label.style.display = 'flex';
+      phase.textContent = t; pct.textContent = ''; bar.style.width = '';
+    },
+    determinate(t, done, total) {
+      wrap.classList.add('active'); wrap.classList.remove('indeterminate');
+      label.style.display = 'flex'; phase.textContent = t;
+      const p = total > 0 ? Math.min(100, Math.round(100 * done / total)) : 0;
+      bar.style.width = p + '%'; pct.textContent = `${done}/${total} (${p}%)`;
+    },
+    hide() {
+      wrap.classList.remove('active','indeterminate');
+      label.style.display = 'none'; bar.style.width = '0%';
+    }
+  };
+}
+const OPB = makePB('orphan-progress-wrap','orphan-progress-bar',
+                   'orphan-progress-label','orphan-progress-phase','orphan-progress-pct');
+
+function setOrphanStatus(html) {
+  document.getElementById('orphan-status').innerHTML = html;
+}
+
+// "05/01/2017" → Date
+function parseMDY(s) {
+  if (!s) return null;
+  const m = String(s).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!m) return null;
+  const d = new Date(+m[3], +m[1] - 1, +m[2]);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function envScoreFor(lease, sensitive, cachedBbox) {
+  let fbbox = cachedBbox;
+  if (!fbbox) {
+    try { fbbox = turf.bbox(lease); } catch (e) { return 0; }
+  }
+  let ppaMax = 0, esiTouch = false;
+  for (const s of sensitive) {
+    if (!bboxOverlap(fbbox, s.bbox)) continue;
+    try { if (!turf.booleanIntersects(lease, s.feat)) continue; } catch (e) { continue; }
+    const p = s.feat.properties || {};
+    if (p.PRIORITY) {
+      const pr = String(p.PRIORITY).toLowerCase();
+      if      (pr.startsWith('h')) ppaMax = Math.max(ppaMax, 3);
+      else if (pr.startsWith('m')) ppaMax = Math.max(ppaMax, 2);
+      else                          ppaMax = Math.max(ppaMax, 1);
+    } else if (p.ESI) {
+      esiTouch = true;
+    }
+  }
+  return ppaMax + (esiTouch ? 1 : 0);
+}
+
+function ageScoreFor(statusDateStr) {
+  const d = parseMDY(statusDateStr);
+  if (!d) return 1;                       // unknown date → mild concern
+  const yrs = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+  if (yrs >= 20) return 3;
+  if (yrs >= 10) return 2;
+  if (yrs >= 5)  return 1;
+  return 0;
+}
+
+function structureScoreFor(lease, structurePts, cachedBbox) {
+  let n = 0;
+  let fbbox = cachedBbox;
+  if (!fbbox) {
+    try { fbbox = turf.bbox(lease); } catch (e) { return [0, 0]; }
+  }
+  for (const s of structurePts) {
+    if (!bboxOverlap(fbbox, s.bbox)) continue;
+    try { if (turf.booleanPointInPolygon(s.feat, lease)) n++; } catch (e) {}
+  }
+  if (n === 0) return [0, 0];
+  if (n >= 3)  return [3, n];
+  return [2, n];
+}
+function structScoreFromCount(n) {
+  if (n === 0) return 0;
+  if (n >= 3)  return 3;
+  return 2;
+}
+
+function sizeScoreFor(acres) {
+  const a = parseFloat(acres);
+  if (!a || isNaN(a)) return 0;
+  if (a >= 100) return 2;
+  if (a >= 10)  return 1;
+  return 0;
+}
+
+// Smooth fly-to: pan if already close, else gentle zoom-in
+function smoothFlyTo(latlng) {
+  const z = map.getZoom();
+  if (z >= 13)      map.panTo(latlng, { animate: true, duration: 0.4 });
+  else if (z >= 11) map.flyTo(latlng, Math.max(z, 12), { duration: 0.5 });
+  else              map.flyTo(latlng, 12, { duration: 0.7 });
+}
+
+// One-shot pulsing ring overlay
+function pulseHighlight(latlng) {
+  const ring = L.circleMarker(latlng, {
+    radius: 8, color: '#ff00aa', weight: 3,
+    fill: false, opacity: 1, interactive: false
+  }).addTo(map);
+  let r = 8, op = 1.0;
+  const id = setInterval(() => {
+    r += 3; op -= 0.07;
+    if (op <= 0) { clearInterval(id); map.removeLayer(ring); return; }
+    ring.setRadius(r); ring.setStyle({ opacity: op });
+  }, 50);
+}
+
+// Add a numbered marker for a well candidate
+function addWellMarker(rank, item) {
+  const c = item.well.geometry.coordinates;       // [lon, lat]
+  const latlng = [c[1], c[0]];
+  const isPlatform = item.assetType === 'Platform';
+  const icon = L.divIcon({
+    className: 'rank-marker' + (isPlatform ? ' platform' : ''),
+    html: String(rank),
+    iconSize: [26, 26], iconAnchor: [13, 13]
+  });
+  const marker = L.marker(latlng, { icon, zIndexOffset: 1000 });
+  marker.bindPopup(buildWellPopupHtml(rank, item));
+  // also outline the parent lease (lightly)
+  if (item.lease) {
+    const poly = L.geoJSON(item.lease, {
+      style: { color: '#b8002e', weight: 1.5, fillColor: '#b8002e',
+               fillOpacity: 0.08, dashArray: '4,3' },
+      interactive: false
+    });
+    orphanGroup.addLayer(poly);
+  }
+  orphanGroup.addLayer(marker);
+  item.marker = marker;
+  item.latlng = latlng;
+}
+
+function buildWellPopupHtml(rank, item) {
+  const w = item.well.properties, l = item.lease ? item.lease.properties : {};
+  const rows = [
+    ['Asset',          item.assetType],
+    ['OSII #',         w.OSIIDNumber],
+    ['LocType',        w.LocType],
+    ['—',              ''],
+    ['Parent lease',   l.LEASE_NUMBER],
+    ['Status',         l.LEASE_STATUS],
+    ['Status date',    l.LEASE_STATUS_DATE],
+    ['Effective',      l.EFFECTIVE_DATE],
+    ['Lessee',         l.ORIGINAL_LESSEE],
+    ['Lease acres',    l.CURRENT_GROSS_ACRES],
+    ['Lease type',     l.LEASE_TYPE],
+    ['Field',          l.FIELD_NAME],
+    ['—',              ''],
+    ['Env score',      `${item.env}/4`],
+    ['Age score',      `${item.age}/3`],
+    ['Lease structs',  `${item.structureN || 0} (score ${item.struct}/3)`],
+    ['Size score',     `${item.size}/2`],
+    ['Asset-type bonus', item.typeBonus ? '+1 (Well)' : '0'],
+    ['Total',          { raw: `<b style="color:#b8002e">${item.total}</b>` }]
+  ];
+  if (item.slrThreshold !== undefined) {
+    rows.push(['—', '']);
+    rows.push(['First inundated at',
+      item.slrThreshold === null
+        ? { raw: '<b>not inundated within 10 ft SLR</b>' }
+        : { raw: `<b style="color:#0040ff">${item.slrThreshold} ft SLR</b> (NOAA bathtub)` }]);
+  }
+  return `<b>Rank ${esc(rank)} — Orphan ${esc(item.assetType)}</b>` + tbl(rows);
+}
+
+function renderWellTable(ranked) {
+  const wrap = document.getElementById('orphan-table-wrap');
+  if (!ranked.length) {
+    wrap.innerHTML = '<small style="color:#666">No orphan wells/platforms found in current view.<br/>Try a wider/coastal bay area, or check that the Inactive O&G Leases layer is populated here.</small>';
+    return;
+  }
+  const maxTotal = ranked[0].total || 1;
+  const rows = ranked.map((r, i) => {
+    const w = r.well.properties, l = r.lease ? r.lease.properties : {};
+    const barW = Math.max(2, Math.round(40 * r.total / maxTotal));
+    // External strings (OSII #, lease #, lessee) get escaped for both
+    // attribute (title=) and cell content. Numbers / hardcoded chars stay raw.
+    const title = `${esc(r.assetType)} OSII=${esc(w.OSIIDNumber || '?')} on lease ${esc(l.LEASE_NUMBER || '?')} (${esc(l.ORIGINAL_LESSEE || '')})`;
+    return `<tr class="orphan-row" data-rank="${i+1}" title="${title}">
+      <td class="rank">${i+1}</td>
+      <td>${esc(l.LEASE_NUMBER || '—')}</td>
+      <td class="score"><span class="score-bar" style="width:${barW}px"></span>${r.total}</td>
+      <td>${r.env}</td>
+      <td>${r.age}</td>
+      <td>${r.assetType === 'Well' ? 'W' : 'P'}</td>
+    </tr>`;
+  });
+  wrap.innerHTML =
+    `<table class="orphan-table">
+      <thead><tr>
+        <th class="col-rank">#</th>
+        <th class="col-lease">Lease</th>
+        <th class="col-score" title="Total priority = 2·E + A + S + Size + (1 if Well)">Σ</th>
+        <th class="col-env" title="Environmental sensitivity (PPA 0–3 + ESI 0/1)">E</th>
+        <th class="col-age" title="Years since lease status change">A</th>
+        <th class="col-str" title="Asset type: W=Well, P=Platform">T</th>
+      </tr></thead>
+      <tbody>${rows.join('')}</tbody>
+    </table>
+    <small style="color:#666">Click a row → smooth pan/zoom + pulse highlight + popup.</small>`;
+
+  wrap.querySelectorAll('.orphan-row').forEach(tr => {
+    tr.addEventListener('click', () => {
+      // selected-row visual
+      wrap.querySelectorAll('.orphan-row.selected').forEach(x => x.classList.remove('selected'));
+      tr.classList.add('selected');
+
+      const rank = parseInt(tr.dataset.rank, 10);
+      const item = ranked[rank - 1];
+      if (!item || !item.latlng) return;
+      smoothFlyTo(item.latlng);
+      pulseHighlight(item.latlng);
+      setTimeout(() => { if (item.marker) item.marker.openPopup(); }, 550);
+    });
+  });
+}
+
+function flashOrphanStatus() {
+  const el = document.getElementById('orphan-status');
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  el.classList.add('status-flash');
+  setTimeout(() => el.classList.remove('status-flash'), 1500);
+}
+
+document.getElementById('btn-orphans').addEventListener('click', async () => {
+  orphanGroup.clearLayers();
+  document.getElementById('orphan-table-wrap').innerHTML = '';
+  if (map.getZoom() < 8) {
+    setOrphanStatus(`Zoom in further (current zoom = ${map.getZoom()}; need ≥ 8) before building the orphan-well list. Try zooming to a bay (e.g., Galveston, Matagorda, Corpus Christi).`);
+    flashOrphanStatus();
+    return;
+  }
+  // Always scroll status into view so the user can see what's happening
+  document.getElementById('orphan-status').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  const btn = document.getElementById('btn-orphans');
+  btn.disabled = true;
+  const env = bboxToEsriGeom(map.getBounds());
+  const topN = Math.max(1, Math.min(100,
+    parseInt(document.getElementById('orphan-topn').value, 10) || 15));
+
+  try {
+    // --- Phase 1: orphan-candidate leases + wells in viewport (parallel) ---
+    OPB.indeterminate('Fetching orphan leases + wells/platforms…');
+    setOrphanStatus('Querying inactive O&G leases (Expired / Terminated / Forfeited / Cancelled) and offshore wells/platforms…');
+    await yieldToUI();
+
+    const leaseWhere = ORPHAN_STATUSES.map(s => `LEASE_STATUS = '${s}'`).join(' OR ');
+    const wellWhere  = ORPHAN_ASSET_TYPES.map(t => `FieldLocType = '${t}'`).join(' OR ');
+    const [leases, structs] = await Promise.all([
+      queryGeoJSON(SVC.ogLeaseIn, { geometry: env, where: leaseWhere,
+        outFields: 'LEASE_NUMBER,LEASE_STATUS,LEASE_STATUS_DATE,EFFECTIVE_DATE,ORIGINAL_LESSEE,CURRENT_GROSS_ACRES,LEASE_TYPE,FIELD_NAME' }),
+      queryGeoJSON(SVC.offshore, { geometry: env, where: wellWhere,
+        outFields: 'OSIIDNumber,LocType,FieldLocType' })
+    ]);
+
+    if (!leases.features.length || !structs.features.length) {
+      OPB.hide();
+      setOrphanStatus(
+        `In view: ${leases.features.length} orphan-candidate leases, ` +
+        `${structs.features.length} wells/platforms. Need both > 0 to rank wells.`
+      );
+      renderWellTable([]);
+      btn.disabled = false; return;
+    }
+
+    // Warn about server cap
+    const HIT_LEASE_CAP = leases.features.length >= 2000;
+    const HIT_WELL_CAP  = structs.features.length  >= 2000;
+
+    // --- Phase 2a: cache lease + well bboxes ONCE -------------------
+    OPB.indeterminate('Indexing geometries…');
+    setOrphanStatus(`Indexing ${leases.features.length} leases + ${structs.features.length} wells…`);
+    await yieldToUI();
+    const leasesIdx = [];
+    for (let i = 0; i < leases.features.length; i++) {
+      const f = leases.features[i];
+      let bb = null; try { bb = turf.bbox(f); } catch (e) {}
+      if (bb) leasesIdx.push({ feat: f, bbox: bb });
+      if (i % 200 === 199) await yieldToUI();
+    }
+    const structurePts = [];
+    for (let i = 0; i < structs.features.length; i++) {
+      const f = structs.features[i];
+      let bb = null; try { bb = turf.bbox(f); } catch (e) {}
+      if (bb) structurePts.push({ feat: f, bbox: bb });
+    }
+
+    // --- Phase 2b: sensitive habitat (PPA + ESI) --------------------
+    OPB.indeterminate('Fetching sensitive habitat…');
+    setOrphanStatus(`Fetching PPA + ESI in viewport…`);
+    await yieldToUI();
+
+    const [ppa, esiSens] = await Promise.all([
+      queryGeoJSON(SVC.ppa, { geometry: env, outFields: 'PPA_ID,PRIORITY' }),
+      queryGeoJSON(SVC.esi, { geometry: env,
+        where: "ESI LIKE '8%' OR ESI LIKE '9%' OR ESI LIKE '10%'",
+        outFields: 'ESI,GENERALIZED_ESI_TYPE' })
+    ]);
+
+    // Build sensitive[] = PPA polygons + raw ESI lines (no buffering —
+    // turf.booleanIntersects works fine for polygon-vs-line, and buffering
+    // 2000 ESI segments was the dominant freeze in regional views).
+    OPB.determinate('Indexing sensitive habitat…', 0,
+                    ppa.features.length + esiSens.features.length);
+    const sensitive = [];
+    let sIdx = 0;
+    for (const f of ppa.features) {
+      try { sensitive.push({ feat: f, bbox: turf.bbox(f) }); } catch (e) {}
+      sIdx++;
+      if (sIdx % 200 === 0) {
+        OPB.determinate('Indexing sensitive habitat…', sIdx,
+                        ppa.features.length + esiSens.features.length);
+        await yieldToUI();
+      }
+    }
+    for (const f of esiSens.features) {
+      try { sensitive.push({ feat: f, bbox: turf.bbox(f) }); } catch (e) {}
+      sIdx++;
+      if (sIdx % 200 === 0) {
+        OPB.determinate('Indexing sensitive habitat…', sIdx,
+                        ppa.features.length + esiSens.features.length);
+        await yieldToUI();
+      }
+    }
+
+    // --- Phase 3: link each well to its parent orphan lease ---------
+    // (Uses cached lease bboxes — eliminates the previous O(W×L) recompute.)
+    OPB.determinate('Linking wells to orphan leases…', 0, structurePts.length);
+    setOrphanStatus(
+      `Linking ${structurePts.length} wells/platforms to their parent lease ` +
+      `(${leasesIdx.length} leases, ${sensitive.length} sensitive areas)…`
+    );
+    await yieldToUI();
+
+    const wellParents       = new Array(structurePts.length).fill(null);
+    const structuresPerLease = new Map();   // lease feat → count
+    let wProcessed = 0;
+    const W_YIELD_EVERY = 5;
+    for (let wi = 0; wi < structurePts.length; wi++) {
+      const sp = structurePts[wi];
+      wProcessed++;
+      if (wProcessed % W_YIELD_EVERY === 0) {
+        OPB.determinate('Linking wells to orphan leases…', wProcessed, structurePts.length);
+        await yieldToUI();
+      }
+      for (const li of leasesIdx) {
+        if (!bboxOverlap(sp.bbox, li.bbox)) continue;
+        try {
+          if (turf.booleanPointInPolygon(sp.feat, li.feat)) {
+            wellParents[wi] = li.feat;
+            structuresPerLease.set(li.feat, (structuresPerLease.get(li.feat) || 0) + 1);
+            break;
+          }
+        } catch (e) {}
+      }
+    }
+
+    // --- Phase 4: score only leases that actually have wells -------
+    OPB.determinate('Scoring linked leases…', 0, structuresPerLease.size);
+    setOrphanStatus(
+      `Scoring ${structuresPerLease.size} leases that host wells/platforms…`
+    );
+    await yieldToUI();
+    const leaseScores = new Map();
+    const leaseBboxByFeat = new Map(leasesIdx.map(li => [li.feat, li.bbox]));
+    let lProcessed = 0;
+    for (const [lease, n] of structuresPerLease) {
+      lProcessed++;
+      if (lProcessed % 10 === 0) {
+        OPB.determinate('Scoring linked leases…', lProcessed, structuresPerLease.size);
+        await yieldToUI();
+      }
+      const lbb = leaseBboxByFeat.get(lease);
+      const e   = envScoreFor(lease, sensitive, lbb);
+      const a   = ageScoreFor(lease.properties.LEASE_STATUS_DATE);
+      const sSc = structScoreFromCount(n);
+      const sz  = sizeScoreFor(lease.properties.CURRENT_GROSS_ACRES);
+      leaseScores.set(lease, { env: e, age: a, struct: sSc, structureN: n, size: sz,
+                                total: 2 * e + a + sSc + sz });
+    }
+
+    // --- Phase 5: build per-well candidates -------------------------
+    const candidates = [];
+    for (let wi = 0; wi < structurePts.length; wi++) {
+      const parent = wellParents[wi];
+      if (!parent) continue;
+      const sp = structurePts[wi];
+      const ls = leaseScores.get(parent);
+      const assetType = sp.feat.properties.FieldLocType;
+      const typeBonus = assetType === 'Well' ? 1 : 0;
+      candidates.push({
+        well: sp.feat, lease: parent, assetType,
+        env: ls.env, age: ls.age, struct: ls.struct, structureN: ls.structureN,
+        size: ls.size, typeBonus,
+        total: ls.total + typeBonus
+      });
+    }
+    candidates.sort((x, y) =>
+      y.total - x.total ||
+      y.env - x.env ||
+      y.structureN - x.structureN);
+
+    const top = candidates.slice(0, topN);
+    top.forEach((it, i) => addWellMarker(i + 1, it));
+    window.lastOrphanRanked = top;   // exposes ranked wells to the SLR module
+    // Reset any prior SLR thresholds since we just rebuilt the list
+    slrThresholds.clear();
+    if (typeof setSlrStatus === 'function') {
+      setSlrStatus('Orphan list rebuilt — click <em>Compute SLR thresholds</em> to score for sea-level rise.');
+    }
+
+    OPB.determinate('Done', structurePts.length, structurePts.length);
+    setTimeout(() => OPB.hide(), 800);
+
+    renderWellTable(top);
+
+    const capNote = (HIT_LEASE_CAP || HIT_WELL_CAP)
+      ? `<br/><small style="color:#a00">Note: ${HIT_LEASE_CAP ? '2000-lease' : ''}${HIT_LEASE_CAP && HIT_WELL_CAP ? ' and ' : ''}${HIT_WELL_CAP ? '2000-well' : ''} server cap reached — zoom in for full coverage.</small>`
+      : '';
+
+    if (!candidates.length) {
+      setOrphanStatus(
+        `No wells/platforms sit inside orphan-candidate leases in this view. ` +
+        `(${leases.features.length} orphan leases · ${structurePts.length} wells/platforms checked.)` + capNote
+      );
+    } else {
+      const meanScore = (candidates.reduce((s, x) => s + x.total, 0) / candidates.length).toFixed(1);
+      const maxScore = candidates[0].total;
+      const wells = candidates.filter(c => c.assetType === 'Well').length;
+      const plats = candidates.length - wells;
+      setOrphanStatus(
+        `<b>${candidates.length}</b> orphan well/platform candidates ` +
+        `(${wells} wells · ${plats} platforms). ` +
+        `Top <b>${top.length}</b> mapped + listed. ` +
+        `Mean Σ ${meanScore} · max Σ ${maxScore}.` + capNote
+      );
+    }
+  } catch (err) {
+    console.error(err);
+    OPB.hide();
+    setOrphanStatus(`Error: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('btn-clear-orphans').addEventListener('click', () => {
+  orphanGroup.clearLayers();
+  document.getElementById('orphan-table-wrap').innerHTML = '';
+  setOrphanStatus('Cleared.');
+});
+
+/* ---------- Tools-menu: show/hide each tool section -------------------- */
+function applyToolModes() {
+  document.getElementById('section-conflict').classList.toggle(
+    'hidden', !document.getElementById('mode-conflict').checked);
+  document.getElementById('section-orphan').classList.toggle(
+    'hidden', !document.getElementById('mode-orphan').checked);
+  document.getElementById('section-slr').classList.toggle(
+    'hidden', !document.getElementById('mode-slr').checked);
+}
+document.getElementById('mode-conflict').addEventListener('change', applyToolModes);
+document.getElementById('mode-orphan').addEventListener('change', applyToolModes);
+document.getElementById('mode-slr').addEventListener('change', applyToolModes);
+applyToolModes();
+
+/* =====================================================================
+ *  SEA-LEVEL RISE RISK MODULE
+ *  Data: NOAA Office for Coastal Management dc_slr/slr_Nft MapServers
+ *        (N = 1..10 ft above current Mean Higher High Water)
+ *  Prediction model: bathtub inundation per NOAA SLR Viewer methodology.
+ *  For each orphan-well candidate, find the lowest N for which the well
+ *  point falls inside the slr_Nft Low-lying Areas polygon — that's the
+ *  well's first-inundation threshold.
+ *  Caveats: bathtub model does not include erosion, subsidence (TX coast
+ *  has measurable subsidence in some areas), or storm-driven flooding.
+ *  Cite Sweet et al. (2022) for time-anchored scenarios:
+ *    Intermediate-Low  ≈ 0.5 m / 1.6 ft by 2100
+ *    Intermediate      ≈ 1.0 m / 3.3 ft by 2100
+ *    Intermediate-High ≈ 1.5 m / 4.9 ft by 2100
+ *    High              ≈ 2.0 m / 6.6 ft by 2100
+ *    Extreme           ≈ 2.5 m / 8.2 ft by 2100
+ * ===================================================================== */
+
+const SLR_BASE = 'https://coast.noaa.gov/arcgis/rest/services/dc_slr';
+const SLR_FEET = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const SLR_SCENARIO_LABEL = {
+  0:  'Baseline (no SLR)',
+  1:  '≈ 0.3 m — Low end of intermediate-low (2100)',
+  2:  '≈ 0.6 m — Intermediate-Low scenario (2100)',
+  3:  '≈ 0.9 m — Intermediate scenario (2100)',
+  4:  '≈ 1.2 m — Low-intermediate-high (2100)',
+  5:  '≈ 1.5 m — Intermediate-High scenario (2100)',
+  6:  '≈ 1.8 m — Between Int-High and High',
+  7:  '≈ 2.1 m — High scenario (2100)',
+  8:  '≈ 2.4 m — Extreme scenario (2100)',
+  9:  '≈ 2.7 m — Above Extreme',
+  10: '≈ 3.0 m — Far-future / pessimistic'
+};
+
+// Cache: NOAA polygons for the current viewport, keyed by ft
+const slrPolyCache = new Map();
+let slrPolygonLayer = null;     // Leaflet overlay for the current SLR polygon
+let slrThresholds = new Map();  // well rank index → first inundation ft (or Infinity)
+window.lastOrphanRanked = null; // set by the orphan handler so SLR can read it
+
+function setSlrStatus(html) {
+  document.getElementById('slr-status').innerHTML = html;
+}
+
+async function fetchSlrPolys(ft, env) {
+  if (slrPolyCache.has(ft)) return slrPolyCache.get(ft);
+  const url = `${SLR_BASE}/slr_${ft}ft/MapServer/0`;
+  const data = await queryGeoJSON(url, { geometry: env, outFields: 'OBJECTID' });
+  const polys = [];
+  for (const f of data.features) {
+    try { polys.push({ feat: f, bbox: turf.bbox(f) }); } catch (e) {}
+  }
+  slrPolyCache.set(ft, polys);
+  return polys;
+}
+
+document.getElementById('btn-slr').addEventListener('click', async () => {
+  if (!window.lastOrphanRanked || !window.lastOrphanRanked.length) {
+    setSlrStatus('No orphan-well list to score. Build the orphan-well list first.');
+    return;
+  }
+  const btn = document.getElementById('btn-slr');
+  btn.disabled = true;
+  slrPolyCache.clear();
+  slrThresholds.clear();
+  const env = bboxToEsriGeom(map.getBounds());
+
+  try {
+    OPB.indeterminate('Fetching NOAA SLR polygons (1–10 ft)…');
+    setSlrStatus('Fetching NOAA inundation polygons for 1–10 ft SLR…');
+    await yieldToUI();
+
+    // Fetch all 10 in parallel
+    await Promise.all(SLR_FEET.map(ft => fetchSlrPolys(ft, env)));
+
+    OPB.determinate('Computing well thresholds…', 0, window.lastOrphanRanked.length);
+    setSlrStatus('Computing first-inundation ft for each well…');
+    await yieldToUI();
+
+    // For each well, find lowest ft that inundates it.
+    // Polygons are usually 0–5 per ft (dissolved), so this is cheap.
+    let processed = 0;
+    for (let i = 0; i < window.lastOrphanRanked.length; i++) {
+      processed++;
+      if (processed % 10 === 0) {
+        OPB.determinate('Computing well thresholds…', processed, window.lastOrphanRanked.length);
+        await yieldToUI();
+      }
+      const item = window.lastOrphanRanked[i];
+      const pt   = item.well;
+      const c    = pt.geometry.coordinates;
+      const pBox = [c[0], c[1], c[0], c[1]];
+      for (const ft of SLR_FEET) {
+        const polys = slrPolyCache.get(ft);
+        let hit = false;
+        for (const p of polys) {
+          if (!bboxOverlap(pBox, p.bbox)) continue;
+          try { if (turf.booleanPointInPolygon(pt, p.feat)) { hit = true; break; } }
+          catch (e) {}
+        }
+        if (hit) { slrThresholds.set(i, ft); break; }
+      }
+      // store on the item too so the popup can read it
+      item.slrThreshold = slrThresholds.has(i) ? slrThresholds.get(i) : null;
+      if (item.marker) {
+        item.marker.setPopupContent(buildWellPopupHtml(i + 1, item));
+      }
+    }
+
+    OPB.hide();
+
+    const inundatedAt10 = slrThresholds.size;
+    const total = window.lastOrphanRanked.length;
+    const histogram = {};
+    for (const ft of slrThresholds.values()) histogram[ft] = (histogram[ft] || 0) + 1;
+    const histStr = SLR_FEET.map(ft => `${ft}ft:${histogram[ft] || 0}`).join(' · ');
+    setSlrStatus(
+      `<b>${inundatedAt10}/${total}</b> wells inundated within 10 ft SLR. ` +
+      `Move the slider to visualize.<br/>` +
+      `<small style="color:#666">First-inundation histogram: ${histStr}</small>`
+    );
+    applySlrSlider();   // refresh marker visuals
+  } catch (err) {
+    console.error(err);
+    OPB.hide();
+    setSlrStatus(`Error: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function applySlrSlider() {
+  const slider  = parseFloat(document.getElementById('slr-slider').value);   // 0.0 – 10.0
+  const meters  = (slider * 0.3048).toFixed(2);
+  const ftText  = slider.toFixed(1) + ' ft';
+  document.getElementById('slr-value').textContent = `${ftText} / ${meters} m`;
+
+  // Pick the discrete NOAA polygon to display (next-up: ceil) and fade its
+  // opacity by how far the slider has progressed into that 1-ft band, so the
+  // overlay grows smoothly between integer thresholds.
+  const topFt     = Math.ceil(slider);                                // 0..10
+  const localFrac = topFt === 0 ? 0 : (slider - (topFt - 1));         // 0..1
+
+  if (slrPolygonLayer) { map.removeLayer(slrPolygonLayer); slrPolygonLayer = null; }
+  if (slider > 0 && slrPolyCache.has(topFt)) {
+    const polys = slrPolyCache.get(topFt);
+    if (polys.length) {
+      slrPolygonLayer = L.geoJSON(
+        { type: 'FeatureCollection', features: polys.map(p => p.feat) },
+        { style: { color: '#0040ff', weight: 0.4 + 0.4 * localFrac,
+                   fillColor: '#3399ff',
+                   fillOpacity: 0.05 + 0.20 * localFrac,
+                   opacity: 0.3 + 0.5 * localFrac },
+          interactive: false }
+      ).addTo(map);
+    }
+  }
+
+  // Well inundation: round to nearest discrete NOAA ft (matches polygon shown
+  // ~midway through the band) — half-integer crossing flips wells smoothly.
+  const effectiveFt = Math.round(slider);
+
+  // Scenario label closest to the slider
+  document.getElementById('slr-scenario').textContent =
+    SLR_SCENARIO_LABEL[effectiveFt] || '';
+
+  let countNow = 0;
+  if (window.lastOrphanRanked) {
+    window.lastOrphanRanked.forEach((item, i) => {
+      const t = slrThresholds.get(i);
+      const inundated = (t !== undefined) && t <= effectiveFt;
+      const imminent  = (t !== undefined) && t === effectiveFt;   // first inundates at this ft
+      if (inundated) countNow++;
+      if (item.marker) {
+        const isPlatform = item.assetType === 'Platform';
+        const cls = 'rank-marker'
+          + (isPlatform ? ' platform' : '')
+          + (inundated ? ' inundated' : '')
+          + (imminent  ? ' imminent'  : '');
+        const newIcon = L.divIcon({
+          className: cls, html: String(i + 1),
+          iconSize: [26, 26], iconAnchor: [13, 13]
+        });
+        item.marker.setIcon(newIcon);
+      }
+    });
+  }
+
+  if (slrThresholds.size > 0) {
+    const total    = window.lastOrphanRanked.length;
+    const noaaNote = (slider !== effectiveFt && slider > 0)
+      ? ` <small style="color:#888">(NOAA data at ${effectiveFt} ft)</small>` : '';
+    const baseTxt  = slider === 0 ? 'baseline' : `${ftText} / ${meters} m SLR`;
+    setSlrStatus(
+      `At ${baseTxt}${noaaNote}: <b>${countNow}/${total}</b> wells inundated.<br/>` +
+      `<small style="color:#666">${SLR_SCENARIO_LABEL[effectiveFt] || ''}</small>`
+    );
+  }
+}
+document.getElementById('slr-slider').addEventListener('input', applySlrSlider);
+
+/* ---------- Live zoom indicator (as percentage of zoom range) ---------- */
+const ZOOM_MIN = 0;
+const ZOOM_MAX = 19;                                  // OSM/Esri tiles max
+const ZOOM_THRESHOLD = 8;                             // raw level required by both tools
+const zoomPct = (z) => Math.round(100 * (z - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN));
+const ZOOM_THRESHOLD_PCT = zoomPct(ZOOM_THRESHOLD);   // ≈ 42
+
+function updateZoomIndicator() {
+  const z = map.getZoom();
+  document.getElementById('zoom-indicator').textContent = zoomPct(z) + '%';
+  document.getElementById('zoom-ok').style.display  = z >= ZOOM_THRESHOLD ? 'inline' : 'none';
+  const bad = document.getElementById('zoom-bad');
+  bad.style.display = z < ZOOM_THRESHOLD ? 'inline' : 'none';
+  bad.textContent = `— zoom in to ≥ ${ZOOM_THRESHOLD_PCT}%`;
+}
+map.on('zoomend', updateZoomIndicator);
+updateZoomIndicator();
+</script>
+</body>
+</html>

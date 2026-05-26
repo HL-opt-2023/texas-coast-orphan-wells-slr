@@ -1,0 +1,17 @@
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor caches
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Local working copies / scratch
+*.bak
+*.tmp
+*.log
+node_modules/
